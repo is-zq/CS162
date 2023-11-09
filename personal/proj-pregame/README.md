@@ -4,5 +4,5 @@ Crash reason:
 Solution:
     Turn line *esp = PHYS_BASE; in setup_stack(void** esp) of process.c into *esp = ((uint8_t*)PHYS_BASE) - (offset);
     offset is an integer greater or equal than 0x0c and cannot be too large.
-    The minimum value is 0x0c, possibly because the parameter is'/do-nothing\0'.
+    The minimum value is 0x0c, possibly because the parameter is'/do-nothing\0',but I'm not sure,if you know why,tell me in README.
     In order to align the stack, we set it to 0x14.
