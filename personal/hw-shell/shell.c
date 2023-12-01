@@ -96,22 +96,10 @@ void run_program(char* prog)
 	{
 		tokens[tok_len++] = token;
 	}
+	char* path = tokens[0];
 
 	/* get argv */
-	char* path = tokens[0];
-	if(path[0] == '/')
-	{
-		for(i=strlen(path)-1;i>=0;i--)
-		{
-			if(path[i] == '/')
-			{
-				argv[0] = &path[i+1];
-				break;
-			}
-		}
-	}
-	else
-		argv[0] = path;
+	argv[0] = path;
 	if(tok_len >= 3 && strcmp(tokens[tok_len-2],"<") == 0)
 	{
 		for(i=1;i<tok_len-2;i++)
