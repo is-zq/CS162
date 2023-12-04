@@ -78,7 +78,9 @@ static void kill(struct intr_frame* f) {
       printf("%s: dying due to interrupt %#04x (%s).\n", thread_name(), f->vec_no,
              intr_name(f->vec_no));
       intr_dump_frame(f);
-	  printf("%s: exit(-1)\n",thread_current()->pcb->process_name);
+	  struct thread* t = thread_current();
+	  childList_get(&t->pcb->ppcb->child_list,t->tid)->exit_status = -1;
+	  printf("%s: exit(-1)\n",t->pcb->process_name);
       process_exit();
       NOT_REACHED();
 

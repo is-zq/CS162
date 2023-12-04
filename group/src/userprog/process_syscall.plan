@@ -1,0 +1,27 @@
+内核维护一个load_list，用于记录已加载的进程
+其节点为
+LoadNode
+{
+	pid_t pid;
+	bool loaded;
+	struct process* pcb;
+	sema k_sem(阻塞内核线程直到确认是否加载成功,初始为0);
+	sema ch_sem(阻塞子进程直到内核线程处理完毕,初始为0);
+	list_elem elem;
+}
+
+每个进程PCB维护一个child_list，用于管理子进程，进程exit时要释放整个child_list
+其节点为
+ChildNode
+{
+	pid_t pid;
+	int exit_status;
+	sema sem(阻塞调用wait的父进程，子进程exit时调用V，初始为0);
+	list_elem elem;
+}
+
+syscall_exec()：创建进程时将对应pid的LoadNode加入到load_list，创建线程后对k_sema进行P操作阻塞，在线程中初始化child_list，加载完毕后将loaded置为true，对k_sema进行V操作，并对ch_sem进行P操作阻塞，内核线程唤醒后若成功加载则内核线程建立二者父子关系，然后对ch_sem进行V操作，否则回收资源。最后删除LoadNode。
+
+syscall_wait()：先对子进程sem进行P操作阻塞，子进程exit时先销毁自己的child_list，然后对父进程child_list对应sem进行V操作，父进程在child_list删除对应子进程。
+
+syscall_handler中需要验证参数地址及参数的合法性，使用is_user_vaddr及pagedir_get_page来判断

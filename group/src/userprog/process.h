@@ -17,6 +17,26 @@ typedef tid_t pid_t;
 typedef void (*pthread_fun)(void*);
 typedef void (*stub_fun)(pthread_fun, void*);
 
+/* Node used to record process being loaded */
+typedef struct LoadNode
+{
+	pid_t pid;
+	bool loaded;
+	struct process* pcb;
+	struct semaphore k_sema;	/* Blocking kernel thread to ensure successful loading */
+	struct semaphore ch_sema;/* Block child process until kernel thread have completed processing */
+	struct list_elem elem;
+}LoadNode;
+
+/* Node used to record child processes */
+typedef struct ChildNode
+{
+	pid_t pid;
+	int exit_status;
+	struct semaphore sema;	/* Block parent process which called wait() */
+	struct list_elem elem;
+}ChildNode;
+
 /* The process control block for a given process. Since
    there can be multiple threads per process, we need a separate
    PCB from the TCB. All TCBs in a process will have a pointer
@@ -27,10 +47,12 @@ struct process {
   uint32_t* pagedir;          /* Page directory. */
   char process_name[16];      /* Name of the main thread */
   struct thread* main_thread; /* Pointer to main thread */
+  struct process* ppcb;		  /* Parent PCB */
+  struct list child_list;	  /* List for child processes */
 };
 
 void userprog_init(void);
-
+ChildNode* childList_get(struct list* child_list,pid_t pid);
 pid_t process_execute(const char* file_name);
 int process_wait(pid_t);
 void process_exit(void);
