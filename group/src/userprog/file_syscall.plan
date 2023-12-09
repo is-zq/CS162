@@ -1,0 +1,14 @@
+一个全局的文件操作锁file_lock
+
+每个进程的PCB添加一个file*，load时打开自己的可执行文件，禁止其他进程修改自己的可执行文件，结束时或异常退出要开放并关闭file*。
+此外PCB里维护一个file*的数组fd_table，大小为MAX_FD = 128+3(stdin,stdout,stderr)，用于获取fd对应的file*.
+
+create():直接调用filesys_create();
+remove():直接调用filesys_remove();
+open():调用filesys_open，将file*加到fd_table中，需要由低到高遍历寻找最小可用fd;
+filesize():直接调用file_length();
+read():如果是stdin调用input_getc，否则调用file_read();
+write():如果是stdout调用putbuf，否则调用file_write();
+seek():直接调用file_seek();
+tell():直接调用file_tell();
+close():调用file_close()，fd_table中置NULL.

@@ -8,6 +8,7 @@
 #include "userprog/gdt.h"
 #include "userprog/pagedir.h"
 #include "userprog/tss.h"
+#include "userprog/syscall.h"
 #include "filesys/directory.h"
 #include "filesys/file.h"
 #include "filesys/filesys.h"
@@ -58,7 +59,8 @@ void userprog_init(void) {
 static LoadNode* loadList_get(pid_t pid)
 {
 	struct list_elem* e;
-	for(e = list_begin(&load_list);e != list_end(&load_list);e = list_next(e))
+	struct list_elem* end = list_end(&load_list);
+	for(e = list_begin(&load_list);e != end;e = list_next(e))
 	{
 		LoadNode* node = list_entry(e,LoadNode,elem);
 		if(node->pid == pid)
@@ -95,7 +97,8 @@ static int loadList_remove(pid_t pid)
 ChildNode* childList_get(struct list* child_list,pid_t pid)
 {
 	struct list_elem* e;
-	for(e = list_begin(child_list);e != list_end(child_list);e = list_next(e))
+	struct list_elem* end = list_end(child_list);
+	for(e = list_begin(child_list);e != end;e = list_next(e))
 	{
 		ChildNode* node = list_entry(e,ChildNode,elem);
 		if(node->pid == pid)
@@ -291,6 +294,9 @@ static void start_process(void* file_name_) {
     thread_exit();
   }
 
+  /* Initialize the fd_table */
+  memset(t->pcb->fd_table,0,sizeof(t->pcb->fd_table));
+
   /* Wake up the kernel thread,and sleep until kernel thread completes processing */
   LoadNode* ln = loadList_get(t->tid);
   ln->loaded = true;
@@ -364,6 +370,10 @@ void process_exit(void) {
      can try to activate the pagedir, but it is now freed memory */
   struct process* pcb_to_free = cur->pcb;
   childList_destroy(&pcb_to_free->child_list);
+  lock_acquire(&file_lock);
+  file_allow_write(pcb_to_free->exec_file);
+  file_close(pcb_to_free->exec_file);
+  lock_release(&file_lock);
   cur->pcb = NULL;
   free(pcb_to_free);
 
@@ -477,6 +487,9 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
     printf("load: %s: open failed\n", file_name);
     goto done;
   }
+  file_deny_write(file);
+  t->pcb->exec_file = file;
+
 
   /* Read and verify executable header. */
   if (file_read(file, &ehdr, sizeof ehdr) != sizeof ehdr ||
@@ -547,7 +560,6 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
 
 done:
   /* We arrive here whether the load is successful or not. */
-  file_close(file);
   return success;
 }
 

@@ -8,6 +8,7 @@
 // These defines will be used in Project 2: Multithreading
 #define MAX_STACK_PAGES (1 << 11)
 #define MAX_THREADS 127
+#define MAX_FD (128+3)
 
 /* PIDs and TIDs are the same type. PID should be
    the TID of the main thread of the process */
@@ -47,6 +48,8 @@ struct process {
   uint32_t* pagedir;          /* Page directory. */
   char process_name[16];      /* Name of the main thread */
   struct thread* main_thread; /* Pointer to main thread */
+  struct file* exec_file;	  /* Executable file */
+  struct file* fd_table[MAX_FD]; /* File despcriptor table */
   struct process* ppcb;		  /* Parent PCB */
   struct list child_list;	  /* List for child processes */
 };

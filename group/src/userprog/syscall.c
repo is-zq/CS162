@@ -5,15 +5,29 @@
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 #include "userprog/process.h"
-#include "pagedir.h"
+#include "userprog/pagedir.h"
+#include "filesys/filesys.h"
+#include "filesys/file.h"
+#include "devices/input.h"
+#include "devices/shutdown.h"
+
+struct lock file_lock;
 
 static void syscall_handler(struct intr_frame*);
 static void syscall_exit(int status);
-static unsigned syscall_write(int fd,const void *buffer,unsigned size);
 static int syscall_practice(int i);
 static void syscall_halt(void);
 static pid_t syscall_exec(const char *cmd_line);
 static int syscall_wait(pid_t pid);
+static bool syscall_create(const char* file,unsigned initial_size);
+static bool syscall_remove(const char* file);
+static int syscall_open(const char* file);
+static int syscall_filesize(int fd);
+static int syscall_read(int fd,void* buffer,unsigned size);
+static int syscall_write(int fd,const void* buffer,unsigned size);
+static void syscall_seek(int fd,unsigned position);
+static int syscall_tell(int fd);
+static void syscall_close(int fd);
 
 static void validate_byte(const char* byte)
 {
@@ -23,7 +37,7 @@ static void validate_byte(const char* byte)
 		syscall_exit(-1);
 	}
 }
-static void validate_string(const char* string)
+static void validate_string(char* string)
 {
 	char* ch = string;
 	while(true)
@@ -45,7 +59,11 @@ static void validate_args(const uint32_t* argv,int count)
 	validate_buffer(argv,count * sizeof(uint32_t));
 }
 
-void syscall_init(void) { intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall"); }
+void syscall_init(void)
+{
+	intr_register_int(0x30, 3, INTR_ON, syscall_handler, "syscall");
+	lock_init(&file_lock);
+}
 
 static void syscall_handler(struct intr_frame* f) 
 {
@@ -69,26 +87,76 @@ static void syscall_handler(struct intr_frame* f)
 		syscall_exit((int)args[1]);
 		break;
 
-	case SYS_WRITE:
-		validate_args(args+1, 3);
-		syscall_write((int)args[1],(void*)args[2],(unsigned)args[3]);
-		break;
-
 	case SYS_PRACTICE:
 		validate_args(args+1, 1);
 		f->eax = syscall_practice((int)args[1]);	
 		break;
+
 	case SYS_HALT:
 		syscall_halt();
 		break;
+
 	case SYS_EXEC:
 		validate_args(args+1, 1);
 		validate_string((char*)args[1]);
 		f->eax = syscall_exec((char*)args[1]);
 		break;
+
 	case SYS_WAIT:
 		validate_args(args+1, 1);
 		f->eax = syscall_wait((pid_t)args[1]);
+		break;
+
+	case SYS_CREATE:
+		validate_args(args+1,2);
+		validate_string((char*)args[1]);
+		f->eax = syscall_create((char*)args[1],(unsigned)args[2]);
+		break;
+
+	case SYS_REMOVE:
+		validate_args(args+1,1);
+		validate_string((char*)args[1]);
+		f->eax = syscall_remove((char*)args[1]);
+		break;
+
+	case SYS_OPEN:
+		validate_args(args+1,1);
+		validate_string((char*)args[1]);
+		f->eax = syscall_open((char*)args[1]);
+		break;
+
+	case SYS_FILESIZE:
+		validate_args(args+1,1);
+		f->eax = syscall_filesize((int)args[1]);
+		break;
+
+	case SYS_READ: 
+		validate_args(args+1,3);
+		validate_buffer((void*)args[2],(size_t)args[3]);
+		f->eax = syscall_read((int)args[1],(void*)args[2],(unsigned)args[3]);
+		break;
+
+	case SYS_WRITE:
+		validate_args(args+1,3);
+		validate_buffer((void*)args[2],(size_t)args[3]);
+		f->eax = syscall_write((int)args[1],(void*)args[2],(unsigned)args[3]);
+		break;
+
+	case SYS_SEEK:
+		validate_args(args+1,2);
+		syscall_seek((int)args[1],(unsigned)args[2]);
+		break;
+
+	case SYS_TELL:
+		validate_args(args+1,1);
+		f->eax = syscall_tell((int)args[1]);
+		break;
+
+	case SYS_CLOSE:
+		validate_args(args+1,1);
+		syscall_close((int)args[1]);
+		break;
+
 	default:
 		break;
 	}
@@ -102,16 +170,6 @@ static void syscall_exit(int status)
 	printf("%s: exit(%d)\n", thread_current()->pcb->process_name, status);
 	process_exit();
 }
-
-static unsigned syscall_write(int fd,const void *buffer,unsigned size)
-{
-	if(fd == STDOUT_FILENO)
-	{
-		putbuf(buffer,size);
-		return size;
-	}
-}
-
 
 static int syscall_practice(int i)
 {
@@ -131,4 +189,155 @@ static pid_t syscall_exec(const char *cmd_line)
 static int syscall_wait(pid_t pid)
 {
 	return process_wait(pid);
+}
+
+static bool syscall_create(const char* file,unsigned initial_size)
+{
+	lock_acquire(&file_lock);
+	bool ret = filesys_create(file,initial_size);
+	lock_release(&file_lock);
+	return ret;
+}
+
+static bool syscall_remove(const char* file)
+{
+	lock_acquire(&file_lock);
+	bool ret = filesys_remove(file);
+	lock_release(&file_lock);
+	return ret;
+}
+
+static int syscall_open(const char* file)
+{
+	struct process* pcb = thread_current()->pcb;
+	lock_acquire(&file_lock);
+	struct file* new_file = filesys_open(file);
+	if(new_file == NULL)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	for(int i=3;i<MAX_FD;i++)
+	{
+		if(pcb->fd_table[i] == NULL)
+		{
+			pcb->fd_table[i] = new_file;
+			lock_release(&file_lock);
+			return i;
+		}
+	}
+	/* Full */
+	file_close(new_file);
+	lock_release(&file_lock);
+	return -1;
+}
+
+static int syscall_filesize(int fd)
+{
+	if(fd < 0 || fd >= MAX_FD)
+		return -1;
+	struct process* pcb = thread_current()->pcb;
+	lock_acquire(&file_lock);
+	if(pcb->fd_table[fd] == NULL)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	int ret = file_length(pcb->fd_table[fd]);
+	lock_release(&file_lock);
+	return ret;
+}
+
+static int syscall_read(int fd,void* buffer,unsigned size)
+{
+	if(fd < 0 || fd >= MAX_FD)
+		return -1;
+	if(fd == STDIN_FILENO)
+	{
+		return input_getc();
+	}
+	else
+	{
+		struct process* pcb = thread_current()->pcb;
+		lock_acquire(&file_lock);
+		if(pcb->fd_table[fd] == NULL)
+		{
+			lock_release(&file_lock);
+			return -1;
+		}
+		int ret = file_read(pcb->fd_table[fd],buffer,size);
+		lock_release(&file_lock);
+		return ret;
+	}
+}
+
+static int syscall_write(int fd,const void *buffer,unsigned size)
+{
+	if(fd < 0 || fd >= MAX_FD)
+		return -1;
+	if(fd == STDOUT_FILENO)
+	{
+		putbuf(buffer,size);
+		return size;
+	}
+	else
+	{
+		struct process* pcb = thread_current()->pcb;
+		lock_acquire(&file_lock);
+		if(pcb->fd_table[fd] == NULL)
+		{
+			lock_release(&file_lock);
+			return -1;
+		}
+		int ret = file_write(pcb->fd_table[fd],buffer,size);
+		lock_release(&file_lock);
+		return ret;
+	}
+}
+
+static void syscall_seek(int fd,unsigned position)
+{
+	if(fd < 0 || fd >= MAX_FD)
+		return;
+	struct process* pcb = thread_current()->pcb;
+	lock_acquire(&file_lock);
+	if(pcb->fd_table[fd] == NULL)
+	{
+		lock_release(&file_lock);
+		return;
+	}
+	file_seek(pcb->fd_table[fd],position);
+	lock_release(&file_lock);
+}
+
+static int syscall_tell(int fd)
+{
+	if(fd < 0 || fd >= MAX_FD)
+		return -1;
+	struct process* pcb = thread_current()->pcb;
+	lock_acquire(&file_lock);
+	if(pcb->fd_table[fd] == NULL)
+	{
+		lock_release(&file_lock);
+		return -1;
+	}
+	int ret = file_tell(pcb->fd_table[fd]);
+	lock_release(&file_lock);
+	return ret;
+}
+
+static void syscall_close(int fd)
+{
+	if(fd < 0 || fd >= MAX_FD)
+		return;
+	struct process* pcb = thread_current()->pcb;
+	lock_acquire(&file_lock);
+	if(pcb->fd_table[fd] == NULL)
+	{
+		lock_release(&file_lock);
+		return;
+	}
+	file_close(pcb->fd_table[fd]);
+	pcb->fd_table[fd] = NULL;
+	lock_release(&file_lock);
 }
