@@ -370,10 +370,19 @@ void process_exit(void) {
      can try to activate the pagedir, but it is now freed memory */
   struct process* pcb_to_free = cur->pcb;
   childList_destroy(&pcb_to_free->child_list);
+
   lock_acquire(&file_lock);
+  struct file* fd_to_free;
+  for(int i=3;i<MAX_FD;i++)	//close all fd
+  {
+	  fd_to_free = pcb_to_free->fd_table[i];
+	  if(fd_to_free != NULL)
+		  file_close(fd_to_free);
+  }
   file_allow_write(pcb_to_free->exec_file);
   file_close(pcb_to_free->exec_file);
   lock_release(&file_lock);
+
   cur->pcb = NULL;
   free(pcb_to_free);
 
