@@ -220,6 +220,7 @@ static void start_process(void* file_name_) {
     if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
     if_.cs = SEL_UCSEG;
     if_.eflags = FLAG_IF | FLAG_MBS;
+	asm("fsave (%0)": :"g"(&if_.fpu));
 	/* create executable name */
 	size_t name_len = strcspn(file_name," \0") + 1;
 	char *exec_name = (char*)malloc(name_len * sizeof(char));

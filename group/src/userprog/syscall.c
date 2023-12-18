@@ -10,6 +10,7 @@
 #include "filesys/file.h"
 #include "devices/input.h"
 #include "devices/shutdown.h"
+#include "lib/float.h"
 
 struct lock file_lock;
 
@@ -28,6 +29,7 @@ static int syscall_write(int fd,const void* buffer,unsigned size);
 static void syscall_seek(int fd,unsigned position);
 static int syscall_tell(int fd);
 static void syscall_close(int fd);
+static double syscall_compute_e(int n);
 
 static void validate_byte(const char* byte)
 {
@@ -155,6 +157,11 @@ static void syscall_handler(struct intr_frame* f)
 	case SYS_CLOSE:
 		validate_args(args+1,1);
 		syscall_close((int)args[1]);
+		break;
+
+	case SYS_COMPUTE_E:
+		validate_args(args+1,1);
+		f->eax = syscall_compute_e((int)args[1]);
 		break;
 
 	default:
@@ -340,4 +347,9 @@ static void syscall_close(int fd)
 	file_close(pcb->fd_table[fd]);
 	pcb->fd_table[fd] = NULL;
 	lock_release(&file_lock);
+}
+
+static double syscall_compute_e(int n)
+{
+	return sys_sum_to_e(n);
 }
