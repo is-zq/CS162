@@ -298,7 +298,7 @@ static void start_process(void* file_name_) {
   /* Initialize the fd_table */
   memset(t->pcb->fd_table,0,sizeof(t->pcb->fd_table));
 
-  /* Wake up the kernel thread,and sleep until kernel thread completes processing */
+  /* Wake up the kernel thread, and sleep until kernel thread completes processing */
   LoadNode* ln = loadList_get(t->tid);
   ln->loaded = true;
   ln->pcb = t->pcb;

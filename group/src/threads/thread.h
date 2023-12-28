@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include "threads/synch.h"
 #include "threads/fixed-point.h"
 
@@ -88,6 +89,7 @@ struct thread {
   char name[16];             /* Name (for debugging purposes). */
   uint8_t* stack;            /* Saved stack pointer. */
   int priority;              /* Priority. */
+  int effe_priority;		 /* Effective priority */
   struct list_elem allelem;  /* List element for all threads list. */
 
   /* Shared between thread.c and synch.c. */
@@ -96,6 +98,9 @@ struct thread {
   /* List element for sleep list */
   int64_t end_tick;
   struct list_elem sleep_elem;
+
+  struct lock* waiting_lock;
+  struct list lock_list;
 
 #ifdef USERPROG
   /* Owned by process.c. */
@@ -152,5 +157,7 @@ int thread_get_nice(void);
 void thread_set_nice(int);
 int thread_get_recent_cpu(void);
 int thread_get_load_avg(void);
+
+bool is_highest_priority();
 
 #endif /* threads/thread.h */
