@@ -183,9 +183,9 @@ pid_t process_execute(const char* file_name) {
   {
 	  cn->exit_status = -1;
 	  sema_up(&cn->sema);
+	  loadList_remove(tid);
   }
   
-  loadList_remove(tid);
   return ret;
 }
 
@@ -212,6 +212,7 @@ static void start_process(void* file_name_) {
     t->pcb->main_thread = t;
     strlcpy(t->pcb->process_name, t->name, sizeof t->name);
 	list_init(&t->pcb->child_list);
+	memset(t->pcb->fd_table,0,sizeof(t->pcb->fd_table));
   }
 
   /* Initialize interrupt frame and load executable. */
@@ -298,12 +299,13 @@ static void start_process(void* file_name_) {
   /* Initialize the fd_table */
   memset(t->pcb->fd_table,0,sizeof(t->pcb->fd_table));
 
-  /* Wake up the kernel thread,and sleep until kernel thread completes processing */
+  /* Wake up the kernel thread, and sleep until kernel thread completes processing */
   LoadNode* ln = loadList_get(t->tid);
   ln->loaded = true;
   ln->pcb = t->pcb;
   sema_up(&ln->k_sema);
   sema_down(&ln->ch_sema);
+  loadList_remove(t->tid);
 
   /* Start the user process by simulating a return from an
      interrupt, implemented by intr_exit (in
@@ -478,6 +480,7 @@ static bool load_segment(struct file* file, off_t ofs, uint8_t* upage, uint32_t 
    and its initial stack pointer into *ESP.
    Returns true if successful, false otherwise. */
 bool load(const char* file_name, void (**eip)(void), void** esp) {
+  lock_acquire(&file_lock);
   struct thread* t = thread_current();
   struct Elf32_Ehdr ehdr;
   struct file* file = NULL;
@@ -570,6 +573,7 @@ bool load(const char* file_name, void (**eip)(void), void** esp) {
 
 done:
   /* We arrive here whether the load is successful or not. */
+  lock_release(&file_lock);
   return success;
 }
 
