@@ -93,6 +93,10 @@ struct thread {
   /* Shared between thread.c and synch.c. */
   struct list_elem elem; /* List element. */
 
+  /* List element for sleep list */
+  int64_t end_tick;
+  struct list_elem sleep_elem;
+
 #ifdef USERPROG
   /* Owned by process.c. */
   struct process* pcb; /* Process control block if this thread is a userprog */
